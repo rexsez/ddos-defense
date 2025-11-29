@@ -1,0 +1,493 @@
+# 🛡️ DDoS Defense System
+
+A real-time DDoS detection and mitigation system using **XDP (eXpress Data Path)** for kernel-level packet filtering, **NFStream** for network flow analysis, and **Machine Learning (AdaBoost)** for attack classification.
+
+---
+
+## 📋 Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [Prerequisites](#prerequisites)
+- [Getting Started](#getting-started)
+- [Accessing the Dashboard](#accessing-the-dashboard)
+- [Understanding the Demo Data](#understanding-the-demo-data)
+- [Managing the Blacklist](#managing-the-blacklist)
+- [Important Notes](#important-notes)
+- [Troubleshooting](#troubleshooting)
+- [Project Structure](#project-structure)
+
+---
+
+## 🏗️ Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           DDoS Defense System                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
+│  │   Network   │───▶│  NFStream   │───▶│  ML Model   │───▶│    Redis    │  │
+│  │   Traffic   │    │  (Capture)  │    │ (AdaBoost)  │    │  (Pub/Sub)  │  │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘  │
+│                                                                   │         │
+│                                                                   ▼         │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
+│  │   Dropped   │◀───│     XDP     │◀───│     XDP     │◀───│   Attack    │  │
+│  │   Packets   │    │  (Kernel)   │    │ Controller  │    │  Detected   │  │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
+│                            │                                                │
+│                            ▼                                                │
+│                     ┌─────────────┐    ┌─────────────┐                     │
+│                     │Elasticsearch│───▶│   Kibana    │                     │
+│                     │  (Logging)  │    │ (Dashboard) │                     │
+│                     └─────────────┘    └─────────────┘                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| **NFStream** | Captures network traffic and extracts 76 flow features |
+| **ML Model (AdaBoost)** | Classifies flows as BENIGN or ATTACK with confidence score |
+| **Redis** | Message broker for real-time attack notifications |
+| **XDP Controller** | Manages the kernel-level XDP program and blacklist |
+| **XDP Program** | Kernel-level packet filter (drops malicious packets at line rate) |
+| **Elasticsearch** | Stores all events: blocks, drops, and flow classifications |
+| **Kibana** | Real-time visualization dashboard |
+
+### Data Flow
+
+1. **Network traffic** is captured by NFStream on the specified interface
+2. **Flow features** (76 features) are extracted and sent to the ML model
+3. **ML model** classifies each flow and publishes attacks to Redis
+4. **XDP Controller** receives attack notifications and updates the kernel blacklist
+5. **XDP Program** drops packets from blacklisted IPs at kernel level
+6. **All events** are logged to Elasticsearch for visualization in Kibana
+
+---
+
+## 📦 Prerequisites
+
+### Software Requirements
+
+| Software | Minimum Version | Installation |
+|----------|-----------------|--------------|
+| **Docker** | 20.10+ | [Install Docker](https://docs.docker.com/engine/install/) |
+| **Docker Compose** | 2.0+ | [Install Docker Compose](https://docs.docker.com/compose/install/) |
+| **Linux Kernel** | 5.4+ | Required for XDP support |
+
+#### Verify Installation
+
+```bash
+docker --version
+```
+
+```bash
+docker-compose --version
+```
+
+### Hardware Requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| **CPU Cores** | 2 | 4+ |
+| **RAM** | 6 GB | 8+ GB |
+| **Disk Space** | 20 GB | 40+ GB |
+| **Network** | 1 Gbps | 10 Gbps |
+
+### Virtualization Note
+
+> ⚠️ **Important**: If running in a hypervisor (VMware, VirtualBox, Hyper-V, etc.), use **Bridged Network Mode** instead of NAT. This ensures:
+> - Proper network interface access for XDP
+> - Accurate source IP addresses in captured traffic
+> - Full packet visibility for the ML model
+
+---
+
+## 🚀 Getting Started
+
+### Step 1: Clone the Repository
+
+```bash
+# TODO: Replace with actual repository URL
+git clone https://github.com/YOUR_USERNAME/ddos-defense.git
+```
+
+```bash
+cd ddos-defense
+```
+
+### Step 2: Make Scripts Executable
+
+```bash
+chmod +x start.sh manage_blacklist.sh
+```
+
+### Step 3: Start the System
+
+```bash
+sudo ./start.sh
+```
+
+The script will automatically:
+- ✅ Detect your network interface
+- ✅ Stop any existing containers
+- ✅ Clean previous data
+- ✅ Build and start all containers
+- ✅ Configure Elasticsearch security
+- ✅ Import Kibana dashboards
+- ✅ Insert demo data for visualization
+
+### Step 4: Monitor the Startup
+
+Watch the detailed startup logs:
+
+```bash
+sudo ./start.sh logs ddos-app
+```
+
+You should see output similar to:
+
+```
+==============================================
+  DDoS Defense System - Starting
+==============================================
+
+Configuration:
+  Network Interface: ens33
+  Capture Interface: ens33
+  Redis: 127.0.0.1:6379
+  Elasticsearch: http://127.0.0.1:9200
+  Confidence Threshold: 0.65
+  Enforcement Mode: SIMULATE
+
+Waiting for Redis...
+SUCCESS: Redis is ready!
+
+Waiting for Elasticsearch...
+SUCCESS: Elasticsearch is ready!
+
+  kibana_system password configured
+
+Setting up Elasticsearch index templates...
+  Created enforcement-blocks template
+  Created xdp-drops template
+  Created netflows template
+
+Waiting for Kibana...
+SUCCESS: Kibana is ready!
+
+✅ File validation passed
+✅ Dashboards imported successfully!
+
+Inserting Demo Data...
+  ✅ Enforcement block record inserted
+  ✅ XDP drop record (Content Filter) inserted
+  ✅ XDP drop record (IP Blacklist) inserted
+
+==============================================
+  Starting Services via Supervisor
+==============================================
+```
+
+### Step 5: Check System Status
+
+```bash
+sudo ./start.sh status
+```
+
+---
+
+## 📊 Accessing the Dashboard
+
+### Kibana URL
+
+Open your browser and navigate to:
+
+```
+http://localhost:5601
+```
+
+### Credentials
+
+| Field | Value |
+|-------|-------|
+| **Username** | `elastic` |
+| **Password** | `jgYsL5-kztDUSd8HyiNd` |
+
+### Navigating to the Dashboard
+
+1. Log in with the credentials above
+2. Click the **☰ hamburger menu** (top-left)
+3. Navigate to **Analytics** → **Dashboard**
+4. Select **"DDoS Defense Overview"** dashboard
+
+### Dashboard Screenshots
+
+#### Main Dashboard Overview
+<!-- TODO: Add screenshot -->
+![Dashboard Overview](docs/screenshots/dashboard-overview.png)
+
+#### Blocked IPs Panel
+<!-- TODO: Add screenshot -->
+![Blocked IPs](docs/screenshots/blocked-ips.png)
+
+#### XDP Drops Timeline
+<!-- TODO: Add screenshot -->
+![XDP Drops](docs/screenshots/xdp-drops.png)
+
+#### Flow Classification Panel
+<!-- TODO: Add screenshot -->
+![Flow Classification](docs/screenshots/flow-classification.png)
+
+---
+
+## 📝 Understanding the Demo Data
+
+When the system starts, it automatically inserts **demo data** to populate the dashboard and verify that all components are working correctly.
+
+### Demo Records Inserted
+
+| Index | Type | Description |
+|-------|------|-------------|
+| `enforcement-blocks-*` | Block Decision | Manual block of IP `1.2.3.4` with 88% confidence |
+| `xdp-drops-*` | Content Filter Drop | Packet from `5.6.7.8` dropped by content filter |
+| `xdp-drops-*` | IP Blacklist Drop | Packet from `1.2.3.4` dropped due to blacklist |
+
+### Why Demo Data?
+
+- **Verifies** Elasticsearch index templates are working
+- **Populates** Kibana dashboards immediately
+- **Demonstrates** the relationship between blocks and drops
+- **Confirms** the data pipeline is functional
+
+> 💡 **Note**: The demo data uses IP addresses `1.2.3.4` and `5.6.7.8` which are documentation IPs and won't affect real traffic.
+
+---
+
+## 🔧 Managing the Blacklist
+
+The `manage_blacklist.sh` script allows you to interact with the XDP blacklist.
+
+### List All Blacklisted IPs
+
+```bash
+sudo ./manage_blacklist.sh list
+```
+
+**Example Output:**
+```
+=== Currently Blacklisted IPs ===
+
+  10.2.5.111      | Detection ID: 6c73e7e7-261a-435c-add9-e17d754c6167 | Drops: 0
+  192.168.1.100   | Detection ID: abc12345-6789-def0-1234-567890abcdef | Drops: 42
+
+  Total: 2 IP(s) blacklisted
+```
+
+### Block an IP Address
+
+```bash
+sudo ./manage_blacklist.sh block-ip 10.0.0.50
+```
+
+**Example Output:**
+```
+Blocking 10.0.0.50 with detection ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+1
+✅ Block command sent
+```
+
+### Remove an IP from Blacklist
+
+```bash
+sudo ./manage_blacklist.sh remove-ip 10.0.0.50
+```
+
+**Example Output:**
+```
+Removing 10.0.0.50 from blacklist...
+✅ Removed 10.0.0.50
+```
+
+### Help
+
+```bash
+sudo ./manage_blacklist.sh
+```
+
+---
+
+## ⚠️ Important Notes
+
+### Blocking Behavior
+
+> 🔴 **All blocks are REAL and take effect immediately!**
+
+When an IP is added to the blacklist (manually or by ML detection):
+- The IP is **immediately blocked** at the kernel level
+- All packets from that IP are **dropped before reaching the application**
+- The block is **logged to Elasticsearch** and visible in Kibana
+- Drop events are **recorded in real-time** as packets are blocked
+
+### Simulation Mode
+
+The system operates in **SIMULATE** mode by default, which means:
+- The ML model **classifies flows** but doesn't auto-block
+- Manual blocks via `manage_blacklist.sh` **do take effect**
+- All events are **logged for analysis**
+
+To enable automatic ML-based blocking, change `ENFORCEMENT_MODE` in `.env`:
+
+```bash
+# In .env file
+ENFORCEMENT_MODE=ENFORCE
+```
+
+### Persistence
+
+> ⚠️ **Blacklist does NOT persist across restarts**
+
+The XDP blacklist is stored in kernel memory (BPF map). When containers restart:
+- **Lost**: Active IP blacklist
+- **Preserved**: All historical logs in Elasticsearch
+
+### Dashboard Reflection
+
+All blocking activity is reflected in the dashboard:
+- **Block Decisions**: Shows when and why IPs were blocked
+- **XDP Drops**: Shows real-time packet drops
+- **Timeline**: Visualizes attack patterns over time
+
+---
+
+## 🔍 Troubleshooting
+
+### Check Container Status
+
+```bash
+sudo ./start.sh status
+```
+
+### View All Logs
+
+```bash
+sudo ./start.sh logs
+```
+
+### View Specific Service Logs
+
+```bash
+sudo ./start.sh logs ddos-app
+```
+
+```bash
+sudo ./start.sh logs ddos-elasticsearch
+```
+
+```bash
+sudo ./start.sh logs ddos-kibana
+```
+
+### Check XDP Controller Logs
+
+```bash
+docker exec ddos-app cat /app/logs/xdp_controller.log
+```
+
+### Check ML Pipeline Logs
+
+```bash
+docker exec ddos-app cat /app/logs/ml_pipeline.log
+```
+
+### Check Supervisor Process Status
+
+```bash
+docker exec ddos-app supervisorctl status
+```
+
+### Restart the System
+
+```bash
+sudo ./start.sh down
+sudo ./start.sh
+```
+
+### Complete Clean Restart
+
+```bash
+sudo ./start.sh clean
+```
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| Elasticsearch unhealthy | Check disk space (`df -h`), need >10% free |
+| Kibana not accessible | Wait 2-3 minutes after startup for full initialization |
+| XDP not loading | Ensure running with `sudo` and kernel supports XDP |
+| No traffic captured | Verify network interface name matches your system |
+
+---
+
+## 📁 Project Structure
+
+```
+ddos-defense/
+├── app/
+│   ├── ml_infer_service.py      # ML classification service
+│   ├── nfstream_agent.py        # Network flow capture
+│   ├── xdp_controller.py        # XDP management
+│   └── xdp_ip_blacklist_bcc.c   # XDP kernel program
+├── config/
+│   ├── elasticsearch/
+│   │   └── elasticsearch.yml    # ES configuration
+│   └── kibana/
+│       ├── kibana.yml           # Kibana configuration
+│       └── dashboards/
+│           └── kibana_dashboards.ndjson  # Pre-built dashboards
+├── data/                        # Persistent data (auto-created)
+│   ├── elasticsearch/
+│   ├── kibana/
+│   └── redis/
+├── docker/
+│   ├── docker-compose.yml       # Container orchestration
+│   ├── Dockerfile               # Application container
+│   ├── entrypoint.sh            # Startup script
+│   └── supervisord.conf         # Process management
+├── logs/                        # Application logs
+├── models/
+│   ├── trained_models.pkl       # AdaBoost model
+│   └── preprocessing_objects.pkl # Feature preprocessing
+├── manage_blacklist.sh          # Blacklist management CLI
+├── start.sh                     # Main startup script
+└── README.md                    # This file
+```
+
+---
+
+## 📜 License
+
+<!-- TODO: Add license information -->
+
+---
+
+## 🤝 Contributing
+
+<!-- TODO: Add contribution guidelines -->
+
+---
+
+## 📧 Support
+
+<!-- TODO: Add support contact information -->
+
+---
+
+<p align="center">
+  <strong>🛡️ DDoS Defense System</strong><br>
+  Real-time protection at kernel speed
+</p>

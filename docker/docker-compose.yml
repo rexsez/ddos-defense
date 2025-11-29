@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: ddos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ../data/redis:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - ddos-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+    container_name: ddos-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - ELASTIC_PASSWORD=${ES_PASS:-jgYsL5-kztDUSd8HyiNd}
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    ports:
+      - "9200:9200"
+    volumes:
+      - ../config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - ../data/elasticsearch:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    networks:
+      - ddos-internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -u elastic:${ES_PASS:-jgYsL5-kztDUSd8HyiNd} -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.19.6
+    container_name: ddos-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_SYSTEM_PASS:-ftcy6DoNKkMbmRrUlxgg}
+    ports:
+      - "5601:5601"
+    volumes:
+      - ../config/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+      - ../data/kibana:/usr/share/kibana/data
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ddos-internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status | grep -q 'available' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  ddos-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ddos-app
+    privileged: true
+    network_mode: host
+    volumes:
+      - /lib/modules:/lib/modules:ro
+      - /sys:/sys:ro
+      - /proc:/proc:ro
+      - /usr/src:/usr/src:ro
+      - /usr/include:/usr/include:ro
+      - ../logs:/app/logs
+      - ../config/kibana/dashboards:/app/dashboards:ro
+    environment:
+      - NETWORK_INTERFACE=${NETWORK_INTERFACE:-ens33}
+      - CAPTURE_INTERFACE=${CAPTURE_INTERFACE:-ens33}
+      - REDIS_HOST=127.0.0.1
+      - REDIS_PORT=6379
+      - ATTACK_CHANNEL=attack_detected
+      - ES_HOST=http://127.0.0.1:9200
+      - ES_USER=elastic
+      - ES_PASS=${ES_PASS:-jgYsL5-kztDUSd8HyiNd}
+      - KIBANA_SYSTEM_PASS=${KIBANA_SYSTEM_PASS:-ftcy6DoNKkMbmRrUlxgg}
+      - ES_BLOCK_INDEX_PREFIX=enforcement-blocks
+      - ES_DROP_INDEX_PREFIX=xdp-drops
+      - ES_INDEX_PREFIX=netflows
+      - ARTIFACTS_DIR=/app/models
+      - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.65}
+      - ENFORCEMENT_MODE=${ENFORCEMENT_MODE:-SIMULATE}
+      - XDP_PROGRAM_PATH=/app/xdp_ip_blacklist_bcc.c
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+      - BPF
+      - PERFMON
+
+networks:
+  ddos-internal:
+    driver: bridge

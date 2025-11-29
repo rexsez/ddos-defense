@@ -1,0 +1,17 @@
+# ===== Kibana Configuration =====
+
+server.host: "0.0.0.0"
+server.publicBaseUrl: "http://localhost:5601"
+
+# Elasticsearch connection
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "ftcy6DoNKkMbmRrUlxgg"
+
+# Security keys (required for saved objects)
+xpack.security.encryptionKey: "abcdefghijklmnopqrstuvwxyz123456"
+xpack.encryptedSavedObjects.encryptionKey: "0123456789abcdefghijklmnopqrstuvwxyz"
+xpack.reporting.encryptionKey: "reporting_key_must_be_32_chars_long!"
+
+# Telemetry
+telemetry.enabled: false
