@@ -77,19 +77,27 @@ Using NAT mode is not optimal as it:
 
 ## Installation and Startup
 
-1. Navigate into the project:
+1. Clone or download the repository:
+
+```bash
+git clone https://github.com/rexsez/ddos-defense.git
+```
+
+Or download manually from: https://github.com/rexsez/ddos-defense.git
+
+2. Navigate into the project:
 
 ```bash
 cd ddos-defense
 ```
 
-2. Make scripts executable:
+3. Make scripts executable:
 
 ```bash
 chmod +x start.sh manage_blacklist.sh
 ```
 
-3. Start the system:
+4. Start the system:
 
 ```bash
 sudo ./start.sh
@@ -148,9 +156,9 @@ Password: jgYsL5-kztDUSd8HyiNd
 
 Only ensure:
 
-✅ NIC printed
-✅ Elasticsearch healthy
-✅ ddos-app running
+✅ NIC printed  
+✅ Elasticsearch healthy  
+✅ ddos-app running  
 ✅ URLs shown
 
 ---
@@ -202,7 +210,7 @@ Open:
 
 [http://localhost:5601](http://localhost:5601)
 
-Login:
+Login credentials:
 
 ```
 Username: elastic
@@ -236,7 +244,6 @@ The dashboard will load and display comprehensive real-time metrics:
 
 ![XDP Dashboard Full View](images/xdp-dashboard-full-view.png)
 
-Key dashboard components and visualizations:
 
 ![XDP Dashboard Detailed Metrics](images/xdp-dashboard-detailed-metrics.png)
 
@@ -277,15 +284,15 @@ This script validates enforcement in seconds.
 
 ### On block:
 
-* IP inserted into kernel blacklist
-* Packets immediately dropped
-* Block appears in Kibana
-* Drop counters increase
+✅ IP inserted into kernel blacklist  
+✅ Packets immediately dropped  
+✅ Block appears in Kibana  
+✅ Drop counters increase
 
 ### On unblock:
 
-* Kernel removes IP
-* Traffic resumes
+✅ Kernel removes IP  
+✅ Traffic resumes
 
 ---
 
@@ -317,7 +324,7 @@ nc -lvnp 8080
 nc <target-ip> 8080
 ```
 
-Send:
+Then send:
 
 ```
 Test Data
@@ -327,9 +334,9 @@ Test Data
 
 ## Expected Behavior
 
-✅ Packet is dropped at kernel level
-✅ No response received
-✅ Kibana shows drop event
+✅ Packet is dropped at kernel level  
+✅ No response received  
+✅ Kibana shows drop event  
 ✅ Reason indicates content-based filtering
 
 ---
