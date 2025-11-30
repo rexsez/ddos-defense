@@ -1,268 +1,353 @@
-# 🛡️ DDoS Defense System - Dockerized
+# XDP-Based Real-Time DDoS Defense System (Dockerized)
 
-A high-performance, kernel-level DDoS defense system using XDP (eXpress Data Path) for packet filtering and machine learning for attack detection.
+This system provides real-time detection and mitigation of DDoS attacks using flow-based machine learning and kernel-level packet enforcement.
 
-## 📋 Prerequisites
+It consists of:
 
-- **Docker** and **Docker Compose** installed
-- **Linux host** with kernel 5.x+ (for XDP/BPF support)
-- **Root/sudo access** (required for XDP operations)
-- Minimum **4GB RAM** (Elasticsearch alone needs 2GB)
+- NFStream for real-time feature extraction
+- AdaBoost machine learning model for traffic classification
+- Redis for attack signaling
+- XDP/eBPF for kernel-level enforcement
+- Elasticsearch and Kibana for logging and visualization
 
-## 🚀 Quick Start
+All components run inside Docker containers orchestrated with Docker Compose.
 
-```bash
-# 1. Clone/copy this directory to your machine
+---
 
-# 2. Edit the .env file to set your network interface
-nano .env
-# Change NETWORK_INTERFACE and CAPTURE_INTERFACE to match your system
-# Run 'ip link show' to see available interfaces
+## Hardware Requirements
 
-# 3. Start everything with one command
-cd docker
-docker-compose up -d
+Recommended minimum specifications:
 
-# 4. Check status
-docker-compose ps
+- 64-bit Linux host  
+- 4 CPU cores (2 minimum)  
+- 8 GB RAM (4 minimum)  
+- 20 GB free disk space  
+- XDP-capable network interface  
+- Root or sudo privileges (required for XDP attachment)
 
-# 5. View logs
-docker-compose logs -f ddos-app
-```
+---
 
-## 🌐 Access Points
+## Software Requirements
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| **Kibana** | http://localhost:5601 | elastic / jgYsL5-kztDUSd8HyiNd |
-| **Elasticsearch** | http://localhost:9200 | elastic / jgYsL5-kztDUSd8HyiNd |
-| **Redis** | localhost:6379 | No auth |
+This system was tested and verified on:
 
-## 📁 Directory Structure
+- **Ubuntu 22.04.05 LTS**
+- **Kernel version: 5.15.0-161-generic**
 
-```
-ddos-defense/
-├── .env                          # Environment configuration
-├── docker/
-│   ├── docker-compose.yml        # Container orchestration
-│   ├── Dockerfile                # Main app container
-│   ├── entrypoint.sh             # Startup script
-│   └── supervisord.conf          # Process manager config
-├── app/
-│   ├── xdp_controller.py         # XDP/BPF controller
-│   ├── ml_infer_service.py       # ML inference
-│   ├── nfstream_agent.py         # Packet capture
-│   └── xdp_ip_blacklist_bcc.c    # XDP kernel program
-├── models/
-│   ├── trained_models.pkl        # AdaBoost model
-│   └── preprocessing_objects.pkl # Scaler + features
-├── config/
-│   ├── elasticsearch/
-│   │   └── elasticsearch.yml
-│   └── kibana/
-│       ├── kibana.yml
-│       └── dashboards/
-│           └── kibana_dashboards.ndjson
-├── data/                         # Persistent data (auto-created)
-│   ├── elasticsearch/
-│   ├── redis/
-│   └── kibana/
-└── logs/                         # Application logs
-```
+If system requirements are met (Docker support, kernel compatibility, privileges, and NIC capability), the system should run successfully on any modern Linux distribution.
 
-## 🔧 Configuration
-
-### Network Interface
-
-Edit `.env` and set your network interface:
+### Check Kernel Version
 
 ```bash
-# Find your interface
-ip link show
-
-# Edit .env
-NETWORK_INTERFACE=eth0      # Change to your interface
-CAPTURE_INTERFACE=eth0      # Usually the same
+uname -r
 ```
 
-### Enforcement Mode
+---
+
+## Docker Environment
+
+This system was verified using:
+
+* Docker Engine: **29.1.1**
+* Docker Compose: **v2.40.3**
+
+Verify locally:
 
 ```bash
-# In .env
-ENFORCEMENT_MODE=SIMULATE   # Log only, don't block (default)
-ENFORCEMENT_MODE=BLOCK_MANUAL  # Actually block IPs
+docker compose version
+docker --version
 ```
 
-### ML Confidence Threshold
+---
+
+## Virtual Machine Note
+
+If running inside a virtual machine (VMware / VirtualBox / KVM):
+
+Use **Bridged Mode** in the network interface configurations
+
+Using NAT mode is not optimal as it:
+
+* Hides real source IPs
+* Breaks proper packet capture
+* Prevents XDP attachment
+* Causes incorrect enforcement behavior
+
+---
+
+## Installation and Startup
+
+1. Navigate into the project:
 
 ```bash
-# In .env
-CONFIDENCE_THRESHOLD=0.65   # Lower = more sensitive, more false positives
+cd ddos-defense
 ```
 
-## 📊 Monitoring
-
-### View Application Logs
+2. Make scripts executable:
 
 ```bash
-# All services
-docker-compose logs -f
-
-# Just the main app
-docker-compose logs -f ddos-app
-
-# Inside the container (supervisor logs)
-docker exec -it ddos-app tail -f /app/logs/xdp_controller.log
-docker exec -it ddos-app tail -f /app/logs/ml_pipeline.log
+chmod +x start.sh manage_blacklist.sh
 ```
 
-### Check XDP Status
+3. Start the system:
 
 ```bash
-# Check if XDP is attached
-docker exec -it ddos-app ip link show | grep xdp
-
-# Check drop counter
-docker exec -it ddos-app bpftool map dump name drop_cnt
-
-# List blacklisted IPs
-docker exec -it ddos-app bpftool map dump name ip_blacklist
+sudo ./start.sh
 ```
 
-### Kibana Dashboards
+---
 
-1. Open http://localhost:5601
-2. Login with elastic / jgYsL5-kztDUSd8HyiNd
-3. Go to **Dashboard** in the left menu
-4. Your imported dashboards should be there
+## NIC Auto-Detection
 
-## 🧪 Testing
+`start.sh` automatically detects the active network interface and assigns it for:
 
-### Manual IP Block Test
+* XDP attachment
+* NFStream capture
+
+Example console output:
+
+```
+Detecting network interface...
+Using interface: ens33
+```
+
+In most cases, no configuration is needed.
+
+If traffic is missing or enforcement is not working, update the interface inside `.env`.
+
+---
+
+## Expected Startup Output
+
+After running `./start.sh`, you should see:
+
+```
+Detecting network interface...
+Using interface: ens33
+
+Container ddos-elasticsearch  Healthy
+Container ddos-redis          Healthy
+Container ddos-kibana         Started
+Container ddos-app            Started
+```
+
+Service Info:
+
+```
+Network Interface: ens33
+
+Access:
+Kibana:        http://localhost:5601
+Elasticsearch: http://localhost:9200
+Redis:         localhost:6379
+
+Credentials:
+Username: elastic
+Password: jgYsL5-kztDUSd8HyiNd
+```
+
+Only ensure:
+
+✅ NIC printed
+✅ Elasticsearch healthy
+✅ ddos-app running
+✅ URLs shown
+
+---
+
+## Service Verification
+
+Check logs:
 
 ```bash
-# Publish a manual block command to Redis
-docker exec -it ddos-redis redis-cli PUBLISH attack_detected '{
-  "src_ip": "192.168.1.100",
-  "detection_event_id": "test-001",
-  "enforcement_mode": "BLOCK_MANUAL"
-}'
-
-# Verify in Elasticsearch
-curl -u elastic:jgYsL5-kztDUSd8HyiNd \
-  "http://localhost:9200/enforcement-blocks-*/_search?size=5&pretty"
+docker logs -f ddos-app
 ```
 
-### Content Filter Test
+Expected output:
+
+```
+kibana_system password configured
+
+Created enforcement-blocks template
+Created xdp-drops template
+Created netflows template
+
+SUCCESS: Kibana is ready
+Dashboards imported successfully
+Demo data inserted successfully
+
+xdp-controller entered RUNNING state
+ml-pipeline entered RUNNING state
+```
+
+---
+
+## Service Roles
+
+### XDP Controller
+
+Handles kernel-level enforcement and IP blocking.
+
+### ML Pipeline
+
+Runs NFStream + AdaBoost classification.
+
+Both must be running for detection and mitigation to work.
+
+---
+
+## Accessing Kibana
+
+Open:
+
+[http://localhost:5601](http://localhost:5601)
+
+Login:
+
+```
+Username: elastic
+Password: jgYsL5-kztDUSd8HyiNd
+```
+
+Once logged in:
+
+* Dashboards auto-load
+* Traffic updates live (with auto refresh set on the dashboard)
+* Drops & blocks appear immediately
+
+---
+
+## Accessing the Dashboard
+
+After logging into Kibana:
+
+1. Click on the hamburger menu (≡) in the top-left corner
+2. Navigate to **Analytics** → **Dashboards**
+3. Select **XDP and Network Traffic Summary** from the dashboard list
+4. The dashboard will display real-time DDoS detection metrics, blocked IPs, and traffic analysis
+
+![Kibana Dashboards Navigation](images/kibana-dashboards-navigation.png)
+
+Alternatively, you can find the dashboard in the **Recently viewed** section if you've accessed it before.
+
+![XDP and Network Traffic Summary Dashboard List](images/xdp-dashboard-list.png)
+
+The dashboard will load and display comprehensive real-time metrics:
+
+![XDP Dashboard Full View](images/xdp-dashboard-full-view.png)
+
+Key dashboard components and visualizations:
+
+![XDP Dashboard Detailed Metrics](images/xdp-dashboard-detailed-metrics.png)
+
+The dashboard provides:
+
+* Real-time traffic flow statistics
+* XDP drop counters and enforcement blocks
+* Machine learning classification results
+* Attack detection alerts and patterns
+
+---
+
+## Manual Validation via manage_blacklist.sh
+
+This script validates enforcement in seconds.
+
+### Block an IP
 
 ```bash
-# Send packet with "Test Data" payload (will be dropped)
-echo "Test Data" | nc localhost 8080
-
-# Check drops
-curl -u elastic:jgYsL5-kztDUSd8HyiNd \
-  "http://localhost:9200/xdp-drops-*/_search?size=5&pretty"
+./manage_blacklist.sh block 192.168.1.100
 ```
 
-## 🛑 Stopping
+### Unblock an IP
 
 ```bash
-cd docker
-docker-compose down
-
-# To also remove volumes (persistent data)
-docker-compose down -v
+./manage_blacklist.sh unblock 192.168.1.100
 ```
 
-## 🐛 Troubleshooting
-
-### "Interface not found"
+### List All Blocked
 
 ```bash
-# Check available interfaces on host
-ip link show
-
-# Update .env with correct interface name
+./manage_blacklist.sh list
 ```
 
-### "BPF permission denied"
+---
 
-The container needs to run privileged. This is already configured, but ensure Docker has proper permissions:
+## Expected Results
+
+### On block:
+
+* IP inserted into kernel blacklist
+* Packets immediately dropped
+* Block appears in Kibana
+* Drop counters increase
+
+### On unblock:
+
+* Kernel removes IP
+* Traffic resumes
+
+---
+
+## Content-Based Filtering
+
+The kernel also performs **payload filtering**.
+
+If incoming packets contain:
+
+```
+Test Data
+```
+
+They are dropped instantly at XDP level.
+
+---
+
+## Content Filter Test
+
+### On protected system:
 
 ```bash
-# Check if running as root or in docker group
-groups
+nc -lvnp 8080
 ```
 
-### "Elasticsearch unhealthy"
+### From attacker machine:
 
 ```bash
-# Check ES logs
-docker-compose logs elasticsearch
-
-# ES needs time to start (60+ seconds)
-# Check health
-curl -u elastic:jgYsL5-kztDUSd8HyiNd http://localhost:9200/_cluster/health
+nc <target-ip> 8080
 ```
 
-### "Dashboards not imported"
+Send:
+
+```
+Test Data
+```
+
+---
+
+## Expected Behavior
+
+✅ Packet is dropped at kernel level
+✅ No response received
+✅ Kibana shows drop event
+✅ Reason indicates content-based filtering
+
+---
+
+## Troubleshooting (In Order)
+
+Only check:
+
+1. `.env` NIC value
+2. Docker status
+3. Containers:
 
 ```bash
-# Check importer logs
-docker-compose logs dashboard-importer
-
-# Manual import
-curl -X POST "http://localhost:5601/api/saved_objects/_import?overwrite=true" \
-  -u elastic:jgYsL5-kztDUSd8HyiNd \
-  -H "kbn-xsrf: true" \
-  --form file=@config/kibana/dashboards/kibana_dashboards.ndjson
+docker ps
 ```
 
-## 📈 Elasticsearch Indices
+4. Logs:
 
-| Index Pattern | Description |
-|---------------|-------------|
-| `enforcement-blocks-*` | IP block decisions |
-| `xdp-drops-*` | Per-packet drop events |
-| `netflows-*` | All classified network flows |
-
-## 🔒 Security Notes
-
-- This setup uses **hardcoded passwords** for simplicity
-- For production, use Docker secrets or environment injection
-- The ddos-app container runs **privileged** (required for XDP)
-- XDP operates at kernel level - use with caution
-
-## 📚 Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Host Network (privileged)                    │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                    ddos-app container                    │    │
-│  │  ┌──────────┐    ┌──────────┐    ┌──────────────────┐   │    │
-│  │  │ NFStream │───▶│ ML Model │───▶│  XDP Controller  │   │    │
-│  │  │ (capture)│    │(AdaBoost)│    │  (BPF maps)      │   │    │
-│  │  └──────────┘    └──────────┘    └──────────────────┘   │    │
-│  │       │               │                   │             │    │
-│  └───────┼───────────────┼───────────────────┼─────────────┘    │
-│          │               │                   │                   │
-│          │               ▼                   ▼                   │
-│          │         ┌──────────┐        ┌──────────┐             │
-│          │         │  Redis   │        │   XDP    │             │
-│          │         │ (pubsub) │        │ (kernel) │             │
-│          │         └──────────┘        └──────────┘             │
-│          │               │                                       │
-│          ▼               ▼                                       │
-│    ┌───────────────────────────┐                                │
-│    │      Elasticsearch        │                                │
-│    │  (logs, metrics, drops)   │                                │
-│    └───────────────────────────┘                                │
-│                  │                                               │
-│                  ▼                                               │
-│           ┌──────────┐                                          │
-│           │  Kibana  │                                          │
-│           │(dashboard)│                                          │
-│           └──────────┘                                          │
-└─────────────────────────────────────────────────────────────────┘
+```bash
+docker logs ddos-app
 ```
