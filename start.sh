@@ -17,7 +17,7 @@ DATA_DIR="$SCRIPT_DIR/data"
 LOGS_DIR="$SCRIPT_DIR/logs"
 
 # XDP files should be in root directory alongside start.sh
-XDP_SOURCE="$SCRIPT_DIR/xdp_ip_blacklist.c"
+XDP_SOURCE="$SCRIPT_DIR/xdp_ip_blacklist_bcc.c"
 XDP_OUTPUT="$SCRIPT_DIR/xdp_ip_blacklist.o"
 VMLINUX_H="$SCRIPT_DIR/vmlinux.h"
 
