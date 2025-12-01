@@ -1,8 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# DDoS Defense System - Quick Start Script (FIXED)
+# DDoS Defense System - Quick Start Script (FIXED & SAFE)
 # =============================================================================
-# Usage: ./start.sh [up|down|logs|status|restart|clean]
+# Stops only THIS pipeline’s containers
+# Cleans Elasticsearch / Redis / Kibana data
+# Fixes ES permissions
 # =============================================================================
 
 set -e
@@ -18,6 +20,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+
+CONTAINERS="ddos-app ddos-redis ddos-elasticsearch ddos-kibana"
 
 print_banner() {
     echo -e "${GREEN}"
@@ -35,6 +39,7 @@ check_prerequisites() {
 
     if [ "$EUID" -ne 0 ]; then
         echo -e "${YELLOW}WARNING: Run with sudo for XDP & permissions${NC}"
+        echo "Example: sudo ./start.sh"
     fi
 
     echo -e "${GREEN}✓ Prerequisites OK${NC}"
@@ -43,7 +48,6 @@ check_prerequisites() {
 
 detect_network_interface() {
     echo "Detecting network interface..."
-
     DETECTED_INTERFACE=$(ip route | awk '/default/ {print $5}' | head -n1)
     [ -z "$DETECTED_INTERFACE" ] && DETECTED_INTERFACE="ens33"
 
@@ -55,20 +59,41 @@ detect_network_interface() {
 }
 
 is_cluster_running() {
+    for container in $CONTAINERS; do
+        if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+stop_services() {
+    echo -e "${BLUE}Stopping DDoS containers only...${NC}"
+
+    for container in $CONTAINERS; do
+        if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+            docker stop "$container" >/dev/null 2>&1 || true
+            docker rm   "$container" >/dev/null 2>&1 || true
+            echo "  ✓ Removed $container"
+        fi
+    done
+
     cd "$DOCKER_DIR"
-    docker compose ps --services --filter "status=running" | grep -q ddos
+    docker compose down >/dev/null 2>&1 || true
+
+    echo -e "${GREEN}✓ DDoS services stopped${NC}"
 }
 
 fix_permissions() {
-    echo -e "${BLUE}Fixing data directory permissions for Elasticsearch...${NC}"
+    echo -e "${BLUE}Fixing data directory permissions...${NC}"
 
     mkdir -p "$DATA_DIR/elasticsearch" "$DATA_DIR/kibana" "$DATA_DIR/redis" "$LOGS_DIR"
 
-    # Correct ownership (Elasticsearch runs as UID 1000, GID 0)
+    # Elasticsearch user: 1000:0
     chown -R 1000:0 "$DATA_DIR/elasticsearch"
     chmod -R 775 "$DATA_DIR/elasticsearch"
 
-    # Safe for other services
+    # Other services
     chown -R 1000:0 "$DATA_DIR/kibana" "$DATA_DIR/redis"
     chmod -R 775 "$DATA_DIR/kibana" "$DATA_DIR/redis"
 
@@ -76,38 +101,43 @@ fix_permissions() {
 }
 
 clean_data() {
-    echo -e "${BLUE}Cleaning all data (fresh start)...${NC}"
+    echo -e "${BLUE}Cleaning data directories...${NC}"
 
-    rm -rf "$DATA_DIR/elasticsearch/"* "$DATA_DIR/kibana/"* "$DATA_DIR/redis/"* "$LOGS_DIR/"* || true
+    rm -rf "$DATA_DIR/elasticsearch/"* || true
+    rm -rf "$DATA_DIR/kibana/"* || true
+    rm -rf "$DATA_DIR/redis/"* || true
+    rm -rf "$LOGS_DIR/"* || true
+
     fix_permissions
-}
 
-stop_services() {
-    echo -e "${BLUE}Stopping services...${NC}"
-    cd "$DOCKER_DIR"
-    docker compose down || true
-    echo -e "${GREEN}✓ Stopped${NC}"
+    echo -e "${GREEN}✓ Data cleaned${NC}"
 }
 
 start_services() {
     print_banner
     check_prerequisites
     detect_network_interface
-    fix_permissions
 
     if is_cluster_running; then
-        echo -e "${YELLOW}Cluster running → restart & clean${NC}"
+        echo -e "${YELLOW}Existing DDoS containers detected. Restarting cleanly...${NC}"
         stop_services
+        clean_data
+    else
         clean_data
     fi
 
-    echo -e "${BLUE}Starting containers...${NC}"
-    cd "$DOCKER_DIR"
+    echo -e "${BLUE}Starting DDoS Defense System...${NC}"
+    echo ""
 
+    cd "$DOCKER_DIR"
     NETWORK_INTERFACE="$NETWORK_INTERFACE" CAPTURE_INTERFACE="$CAPTURE_INTERFACE" \
         docker compose up -d --build
 
-    echo -e "${GREEN}✓ Stack starting...${NC}"
+    echo ""
+    echo -e "${GREEN}=============================================="
+    echo "  Services Started!"
+    echo "==============================================${NC}"
+    echo ""
     echo "Kibana        → http://localhost:5601"
     echo "Elasticsearch → http://localhost:9200"
     echo "Redis         → localhost:6379"
@@ -121,14 +151,17 @@ show_logs() {
 }
 
 show_status() {
+    echo -e "${BLUE}Container Status:${NC}"
     cd "$DOCKER_DIR"
     docker compose ps
+    echo ""
+
     docker inspect --format='Elasticsearch health: {{.State.Health.Status}}' ddos-elasticsearch 2>/dev/null || true
 }
 
 restart_services() {
-    cd "$DOCKER_DIR"
-    docker compose restart
+    stop_services
+    start_services
 }
 
 clean_restart() {
@@ -137,7 +170,9 @@ clean_restart() {
     start_services
 }
 
-# Main
+# =========================
+# Entry Point
+# =========================
 case "${1:-up}" in
     up|start) start_services ;;
     down|stop) stop_services ;;

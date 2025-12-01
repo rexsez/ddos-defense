@@ -172,7 +172,7 @@ done
 # Validate dashboard file
 # =============================================================================
 
-DASHBOARD_FILE="/app/dashboards/kibana_dashboards.ndjson"
+DASHBOARD_FILE="/app/config/kibana/dashboards/kibana_dashboards.ndjson"
 
 echo ""
 echo "=============================================="
@@ -190,7 +190,7 @@ else
             echo "WARNING: Dashboard file too small ($SIZE bytes), skipping import"
         else
             echo "✅ File validation passed"
-            
+
             # Import dashboards
             echo ""
             echo "Importing dashboards to Kibana..."
@@ -304,4 +304,3 @@ echo "Logs available at: /app/logs/"
 echo "=============================================="
 
 exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/ddos-defense.conf
-
