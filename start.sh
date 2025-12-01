@@ -15,11 +15,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$SCRIPT_DIR/docker"
 DATA_DIR="$SCRIPT_DIR/data"
 LOGS_DIR="$SCRIPT_DIR/logs"
-APP_DIR="$SCRIPT_DIR/app"
 
-XDP_SOURCE="$APP_DIR/xdp_ip_blacklist.c"
-XDP_OUTPUT="$APP_DIR/xdp_ip_blacklist.o"
-VMLINUX_H="$APP_DIR/vmlinux.h"
+# XDP files should be in root directory alongside start.sh
+XDP_SOURCE="$SCRIPT_DIR/xdp_ip_blacklist.c"
+XDP_OUTPUT="$SCRIPT_DIR/xdp_ip_blacklist.o"
+VMLINUX_H="$SCRIPT_DIR/vmlinux.h"
 
 # Colors
 RED='\033[0;31m'
