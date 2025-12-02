@@ -89,11 +89,16 @@ services:
     privileged: true
     network_mode: host
     volumes:
-      # Application files
-      - ../app:/app:ro
-      - ../config:/app/config:ro
-      - ../models:/app/models:ro
-      - ../logs:/app/logs:rw
+      # Mount files individually to avoid conflicts
+      - ../app/xdp_ip_blacklist.o:/app/xdp_ip_blacklist.o:ro
+      - ../app/xdp_controller.py:/app/xdp_controller.py:ro
+      - ../app/nfstream_agent.py:/app/nfstream_agent.py:ro
+      - ../app/ml_infer_service.py:/app/ml_infer_service.py:ro
+      - ../config/elasticsearch:/app/config/elasticsearch:ro
+      - ../config/kibana:/app/config/kibana:ro
+      - ../models/preprocessing_objects.pkl:/app/models/preprocessing_objects.pkl:ro
+      - ../models/trained_models.pkl:/app/models/trained_models.pkl:ro
+      - ../logs:/var/log/ddos:rw
       
       # CRITICAL: BPF filesystem mounts for CO-RE
       # These will be supplemented by docker-compose.override.yml (auto-generated)
