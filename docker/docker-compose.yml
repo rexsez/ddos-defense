@@ -1,4 +1,5 @@
 services:
+
   redis:
     image: redis:7-alpine
     container_name: ddos-redis
@@ -15,6 +16,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
@@ -48,6 +50,7 @@ services:
         soft: 65536
         hard: 65536
 
+
   kibana:
     image: docker.elastic.co/kibana/kibana:8.19.6
     container_name: ddos-kibana
@@ -67,11 +70,16 @@ services:
     networks:
       - ddos-internal
     healthcheck:
-      test: ["CMD-SHELL", "curl -u kibana_system:${KIBANA_SYSTEM_PASS:-ftcy6DoNKkMbmRrUlxgg} -f http://localhost:5601/api/status | grep -q 'available' || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -u kibana_system:${KIBANA_SYSTEM_PASS:-ftcy6DoNKkMbmRrUlxgg} -f http://localhost:5601/api/status | grep -q 'available' || exit 1"
+        ]
       interval: 30s
       timeout: 10s
       retries: 10
       start_period: 120s
+
 
   ddos-app:
     build:
@@ -81,45 +89,68 @@ services:
     privileged: true
     network_mode: host
     volumes:
-      - ../config:/app/config
-      - ../models:/app/models
-      - ../logs:/app/logs
-      - ../dashboards:/app/dashboards
-      - /sys/fs/bpf:/sys/fs/bpf:rw
-      - /sys/kernel/btf:/sys/kernel/btf:ro
-      - /sys/kernel/debug:/sys/kernel/debug:ro
-      - /usr/lib/linux-tools-BPFTOOL_PLACEHOLDER/bpftool:/usr/sbin/bpftool:ro
+      # Application files
+      - ../app:/app:ro
+      - ../config:/app/config:ro
+      - ../models:/app/models:ro
+      - ../logs:/app/logs:rw
+      
+      # CRITICAL: BPF filesystem mounts for CO-RE
+      # These will be supplemented by docker-compose.override.yml (auto-generated)
+      # The override file contains auto-detected paths for:
+      #   - bpftool (kernel-specific location)
+      #   - /sys/kernel/btf (BTF info)
+      #   - /sys/fs/bpf (BPF filesystem)
+      #   - /sys/kernel/debug (optional debugfs)
+      
     environment:
+      # Network configuration (set by start.sh)
       - NETWORK_INTERFACE=${NETWORK_INTERFACE:-ens33}
       - CAPTURE_INTERFACE=${CAPTURE_INTERFACE:-ens33}
+
+      # Service endpoints (host network mode = localhost)
       - REDIS_HOST=127.0.0.1
       - REDIS_PORT=6379
       - ES_HOST=http://127.0.0.1:9200
       - ES_USER=elastic
       - ES_PASS=${ES_PASS:-jgYsL5-kztDUSd8HyiNd}
       - KIBANA_SYSTEM_PASS=${KIBANA_SYSTEM_PASS:-ftcy6DoNKkMbmRrUlxgg}
+
+      # Application configuration
       - ES_INDEX_PREFIX=netflows
       - ARTIFACTS_DIR=/app/models
       - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.65}
       - ENFORCEMENT_MODE=${ENFORCEMENT_MODE:-SIMULATE}
+
+      # XDP configuration (CO-RE/libbpf)
       - XDP_OBJECT_PATH=/app/xdp_ip_blacklist.o
+
+      # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PYTHONUNBUFFERED=1
+
     depends_on:
       redis:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+
     restart: unless-stopped
+
+    # Required capabilities for XDP/eBPF
     cap_add:
-      - SYS_ADMIN
-      - NET_ADMIN
-      - BPF
-      - PERFMON
-      - NET_RAW
+      - SYS_ADMIN    # For BPF operations
+      - NET_ADMIN    # For network interface control
+      - BPF          # Explicit BPF capability (kernel 5.8+)
+      - PERFMON      # For perf events
+      - NET_RAW      # For packet capture
+
+    # Security options
     security_opt:
       - apparmor:unconfined
       - seccomp:unconfined
+
+
 
 networks:
   ddos-internal:

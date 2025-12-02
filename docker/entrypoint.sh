@@ -19,8 +19,71 @@ echo "  Enforcement Mode: ${ENFORCEMENT_MODE:-SIMULATE}"
 echo ""
 
 # =============================================================================
+# Validate XDP/BPF Dependencies
+# =============================================================================
+echo "=============================================="
+echo " Validating XDP/BPF Dependencies"
+echo "=============================================="
+echo ""
+
+# Check bpftool
+if ! command -v bpftool &> /dev/null; then
+    echo "ERROR: bpftool not found in container"
+    echo "This means the auto-detection failed or docker-compose.override.yml is missing"
+    echo ""
+    echo "Solution: Run ./detect_xdp_deps.sh on the host before starting"
+    exit 1
+fi
+echo "✓ bpftool available: $(which bpftool)"
+
+# Check BTF
+if [ ! -f "/sys/kernel/btf/vmlinux" ]; then
+    echo "ERROR: Kernel BTF not mounted at /sys/kernel/btf/vmlinux"
+    echo "This is required for CO-RE XDP programs"
+    exit 1
+fi
+echo "✓ Kernel BTF mounted"
+
+# Check BPF filesystem
+if [ ! -d "/sys/fs/bpf" ]; then
+    echo "WARNING: /sys/fs/bpf not mounted, creating..."
+    mkdir -p /sys/fs/bpf || true
+fi
+
+# Mount bpffs if not already mounted
+if ! mount | grep -q "bpf on /sys/fs/bpf"; then
+    echo "Mounting BPF filesystem..."
+    mount -t bpf bpf /sys/fs/bpf 2>/dev/null || echo "  (may already be mounted from host)"
+fi
+echo "✓ BPF filesystem ready"
+
+# Check XDP object file
+if [ ! -f "${XDP_OBJECT_PATH}" ]; then
+    echo "ERROR: XDP object file not found: ${XDP_OBJECT_PATH}"
+    echo ""
+    echo "Solution: Run ./build_xdp.sh on the host before starting"
+    exit 1
+fi
+
+# Validate object file
+SIZE=$(stat -c%s "${XDP_OBJECT_PATH}")
+if [ "$SIZE" -lt 100 ]; then
+    echo "ERROR: XDP object file too small ($SIZE bytes) - may be corrupted"
+    exit 1
+fi
+echo "✓ XDP object file valid: ${XDP_OBJECT_PATH} ($SIZE bytes)"
+
+echo ""
+echo "✓ All XDP/BPF dependencies validated"
+echo ""
+
+# =============================================================================
 # Wait for Redis
 # =============================================================================
+echo "=============================================="
+echo " Waiting for Dependencies"
+echo "=============================================="
+echo ""
 echo "Waiting for Redis..."
 MAX_ATTEMPTS=60
 ATTEMPT=0
@@ -34,7 +97,7 @@ until redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} ping > /dev/null 2>&1; do
     echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS - Redis not ready, waiting..."
     sleep 2
 done
-echo "SUCCESS: Redis is ready!"
+echo "✓ Redis is ready!"
 echo ""
 
 # =============================================================================
@@ -52,7 +115,7 @@ until curl -s -u "${ES_USER}:${ES_PASS}" "${ES_HOST}/_cluster/health" > /dev/nul
     echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS - Elasticsearch not ready, waiting..."
     sleep 5
 done
-echo "SUCCESS: Elasticsearch is ready!"
+echo "✓ Elasticsearch is ready!"
 echo ""
 
 # =============================================================================
@@ -63,26 +126,51 @@ curl -s -X POST "${ES_HOST}/_security/user/kibana_system/_password" \
     -u "${ES_USER}:${ES_PASS}" \
     -H "Content-Type: application/json" \
     -d '{"password": "'"${KIBANA_SYSTEM_PASS}"'"}' > /dev/null 2>&1 \
-    && echo "  kibana_system password configured" \
-    || echo "  kibana_system password may already be set"
+    && echo "  ✓ kibana_system password configured" \
+    || echo "  (password may already be set)"
 echo ""
 
 # =============================================================================
 # Verify Network Interface Exists
 # =============================================================================
+echo "=============================================="
+echo " Network Interface Validation"
+echo "=============================================="
+echo ""
 echo "Checking network interface: ${NETWORK_INTERFACE}"
+
 if ! ip link show ${NETWORK_INTERFACE} > /dev/null 2>&1; then
-    echo "WARNING: Interface ${NETWORK_INTERFACE} not found!"
+    echo "ERROR: Interface ${NETWORK_INTERFACE} not found!"
+    echo ""
     echo "Available interfaces:"
     ip link show | grep -E "^[0-9]+" | awk -F: '{print "  " $2}'
     echo ""
+    echo "This is a critical error. The system cannot start without a valid interface."
+    echo ""
+    echo "Solution:"
+    echo "  1. Check your .env file in docker/ directory"
+    echo "  2. Update NETWORK_INTERFACE to match an available interface"
+    echo "  3. Restart with: sudo ./start.sh"
+    echo ""
+    exit 1
 fi
+
+echo "✓ Interface ${NETWORK_INTERFACE} is available"
+
+# Show interface details
+echo ""
+echo "Interface details:"
+ip addr show ${NETWORK_INTERFACE} | grep -E "inet |link/" | sed 's/^/  /'
 echo ""
 
 # =============================================================================
 # Create Index Templates in Elasticsearch
 # =============================================================================
-echo "Setting up Elasticsearch index templates..."
+echo "=============================================="
+echo " Elasticsearch Setup"
+echo "=============================================="
+echo ""
+echo "Creating index templates..."
 
 curl -s -X PUT "${ES_HOST}/_index_template/enforcement-blocks-template" \
     -u "${ES_USER}:${ES_PASS}" \
@@ -102,7 +190,7 @@ curl -s -X PUT "${ES_HOST}/_index_template/enforcement-blocks-template" \
                 }
             }
         }
-    }' > /dev/null 2>&1 && echo "  Created enforcement-blocks template" || echo "  Template may already exist"
+    }' > /dev/null 2>&1 && echo "  ✓ Created enforcement-blocks template" || echo "  (template may already exist)"
 
 curl -s -X PUT "${ES_HOST}/_index_template/xdp-drops-template" \
     -u "${ES_USER}:${ES_PASS}" \
@@ -121,7 +209,7 @@ curl -s -X PUT "${ES_HOST}/_index_template/xdp-drops-template" \
                 }
             }
         }
-    }' > /dev/null 2>&1 && echo "  Created xdp-drops template" || echo "  Template may already exist"
+    }' > /dev/null 2>&1 && echo "  ✓ Created xdp-drops template" || echo "  (template may already exist)"
 
 curl -s -X PUT "${ES_HOST}/_index_template/netflows-template" \
     -u "${ES_USER}:${ES_PASS}" \
@@ -143,7 +231,7 @@ curl -s -X PUT "${ES_HOST}/_index_template/netflows-template" \
                 }
             }
         }
-    }' > /dev/null 2>&1 && echo "  Created netflows template" || echo "  Template may already exist"
+    }' > /dev/null 2>&1 && echo "  ✓ Created netflows template" || echo "  (template may already exist)"
 
 echo ""
 
@@ -151,6 +239,10 @@ echo ""
 # Wait for Kibana and Import Dashboards
 # =============================================================================
 
+echo "=============================================="
+echo " Kibana Setup"
+echo "=============================================="
+echo ""
 echo "Waiting for Kibana..."
 KIBANA_URL="http://localhost:5601"
 ATTEMPT=0
@@ -158,7 +250,7 @@ MAX_KIBANA_ATTEMPTS=90
 
 while [ $ATTEMPT -lt $MAX_KIBANA_ATTEMPTS ]; do
     if curl -s -u "elastic:${ES_PASS}" "$KIBANA_URL/api/status" | grep -q '"available"'; then
-        echo "SUCCESS: Kibana is ready!"
+        echo "✓ Kibana is ready!"
         break
     fi
     ATTEMPT=$((ATTEMPT+1))
@@ -168,33 +260,28 @@ while [ $ATTEMPT -lt $MAX_KIBANA_ATTEMPTS ]; do
     fi
 done
 
-# =============================================================================
-# Validate dashboard file
-# =============================================================================
-
-DASHBOARD_FILE="/app/config/kibana/dashboards/kibana_dashboards.ndjson"
-
-echo ""
-echo "=============================================="
-echo " Validating Dashboard File"
-echo "=============================================="
-
-if [ ! -f "$DASHBOARD_FILE" ]; then
-    echo "WARNING: Dashboard file not found, skipping import"
+if [ $ATTEMPT -ge $MAX_KIBANA_ATTEMPTS ]; then
+    echo "WARNING: Kibana did not become available in time"
+    echo "Dashboards will not be imported, but the system will continue"
 else
-    if [ ! -r "$DASHBOARD_FILE" ]; then
+    # =============================================================================
+    # Validate and Import Dashboard
+    # =============================================================================
+    
+    DASHBOARD_FILE="/app/config/kibana/dashboards/kibana_dashboards.ndjson"
+    
+    echo ""
+    echo "Importing dashboards..."
+    
+    if [ ! -f "$DASHBOARD_FILE" ]; then
+        echo "WARNING: Dashboard file not found, skipping import"
+    elif [ ! -r "$DASHBOARD_FILE" ]; then
         echo "WARNING: Dashboard file is not readable, skipping import"
     else
         SIZE=$(stat -c%s "$DASHBOARD_FILE")
         if [ "$SIZE" -lt 100 ]; then
             echo "WARNING: Dashboard file too small ($SIZE bytes), skipping import"
         else
-            echo "✅ File validation passed"
-
-            # Import dashboards
-            echo ""
-            echo "Importing dashboards to Kibana..."
-
             HTTP_CODE=$(curl -s -o /tmp/import_response.json -w "%{http_code}" \
                 -X POST "$KIBANA_URL/api/saved_objects/_import?overwrite=true" \
                 -u "elastic:${ES_PASS}" \
@@ -202,24 +289,27 @@ else
                 -H "Accept: application/json" \
                 -F "file=@${DASHBOARD_FILE};type=application/ndjson"
             )
-
+            
             if [ "$HTTP_CODE" = "200" ]; then
-                echo "✅ Dashboards imported successfully!"
+                echo "✓ Dashboards imported successfully!"
             else
                 echo "WARNING: Dashboard import returned HTTP $HTTP_CODE"
+                cat /tmp/import_response.json 2>/dev/null || true
             fi
         fi
     fi
 fi
 
+echo ""
+
 # =============================================================================
 # Insert Demo Data Directly to Elasticsearch
 # =============================================================================
 
+echo "=============================================="
+echo " Demo Data Insertion"
+echo "=============================================="
 echo ""
-echo "=============================================="
-echo " Inserting Demo Data"
-echo "=============================================="
 
 CURRENT_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
 DATE_INDEX=$(date -u +%Y.%m.%d)
@@ -229,14 +319,12 @@ DEMO_DETECTION_UUID=$(cat /proc/sys/kernel/random/uuid)
 DROP_ID_1=$(cat /proc/sys/kernel/random/uuid)
 DROP_ID_2=$(cat /proc/sys/kernel/random/uuid)
 
+echo "Inserting demo data..."
 echo "  Timestamp: $CURRENT_TIMESTAMP"
 echo "  Detection ID: $DEMO_DETECTION_UUID"
-echo "  Drop ID 1 (Content Filter): $DROP_ID_1"
-echo "  Drop ID 2 (IP Blacklist): $DROP_ID_2"
 echo ""
 
 # 1. Insert enforcement block record
-echo "Inserting enforcement block record..."
 curl -s -X POST "${ES_HOST}/enforcement-blocks-${DATE_INDEX}/_doc" \
     -u "${ES_USER}:${ES_PASS}" \
     -H "Content-Type: application/json" \
@@ -249,11 +337,10 @@ curl -s -X POST "${ES_HOST}/enforcement-blocks-${DATE_INDEX}/_doc" \
         \"source\": \"DEMO_STARTUP\",
         \"enforcement_mode\": \"BLOCK_MANUAL\"
     }" > /dev/null 2>&1 \
-    && echo "  ✅ Enforcement block record inserted" \
-    || echo "  WARNING: Failed to insert enforcement block record"
+    && echo "  ✓ Enforcement block record" \
+    || echo "  ✗ Failed to insert enforcement block"
 
-# 2. Insert XDP drop record - CONTENT_FILTER (no detection_event_id)
-echo "Inserting XDP drop record (Content Filter)..."
+# 2. Insert XDP drop record - CONTENT_FILTER
 curl -s -X POST "${ES_HOST}/xdp-drops-${DATE_INDEX}/_doc" \
     -u "${ES_USER}:${ES_PASS}" \
     -H "Content-Type: application/json" \
@@ -265,11 +352,10 @@ curl -s -X POST "${ES_HOST}/xdp-drops-${DATE_INDEX}/_doc" \
         \"detection_event_id\": null,
         \"drop_id\": \"${DROP_ID_1}\"
     }" > /dev/null 2>&1 \
-    && echo "  ✅ XDP drop record (Content Filter) inserted" \
-    || echo "  WARNING: Failed to insert XDP drop record (Content Filter)"
+    && echo "  ✓ XDP drop (Content Filter)" \
+    || echo "  ✗ Failed to insert XDP drop"
 
-# 3. Insert XDP drop record - IP_BLACKLIST (with detection_event_id)
-echo "Inserting XDP drop record (IP Blacklist)..."
+# 3. Insert XDP drop record - IP_BLACKLIST
 curl -s -X POST "${ES_HOST}/xdp-drops-${DATE_INDEX}/_doc" \
     -u "${ES_USER}:${ES_PASS}" \
     -H "Content-Type: application/json" \
@@ -281,24 +367,37 @@ curl -s -X POST "${ES_HOST}/xdp-drops-${DATE_INDEX}/_doc" \
         \"detection_event_id\": \"${DEMO_DETECTION_UUID}\",
         \"drop_id\": \"${DROP_ID_2}\"
     }" > /dev/null 2>&1 \
-    && echo "  ✅ XDP drop record (IP Blacklist) inserted" \
-    || echo "  WARNING: Failed to insert XDP drop record (IP Blacklist)"
+    && echo "  ✓ XDP drop (IP Blacklist)" \
+    || echo "  ✗ Failed to insert XDP drop"
 
 echo ""
-echo "✅ All demo data inserted successfully"
+echo "✓ Demo data insertion complete"
+echo ""
+
+# =============================================================================
+# Final Summary
+# =============================================================================
+
+echo "=============================================="
+echo "  Startup Complete - Starting Services"
+echo "=============================================="
+echo ""
+echo "Configuration Summary:"
+echo "  • Network Interface: ${NETWORK_INTERFACE}"
+echo "  • XDP Program:       ${XDP_OBJECT_PATH}"
+echo "  • Enforcement Mode:  ${ENFORCEMENT_MODE}"
+echo "  • ML Threshold:      ${CONFIDENCE_THRESHOLD}"
+echo ""
+echo "Services starting:"
+echo "  1. XDP Controller - Kernel packet filtering"
+echo "  2. ML Pipeline    - NFStream → ML Inference"
+echo ""
+echo "Logs: /app/logs/"
+echo "=============================================="
 echo ""
 
 # =============================================================================
 # Start Services via Supervisor
 # =============================================================================
 
-echo "=============================================="
-echo "  Starting Services via Supervisor"
-echo "=============================================="
-echo ""
-echo "Services:"
-echo "  1. XDP Controller - Kernel-level packet filtering"
-echo "  2. ML Pipeline    - NFStream -> ML Inference"
-echo ""
-echo "Logs available at: /app/logs/"
-echo "=============================================="
+exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/ddos-defense.conf
