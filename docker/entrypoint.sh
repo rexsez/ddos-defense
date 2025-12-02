@@ -244,25 +244,56 @@ echo " Kibana Setup"
 echo "=============================================="
 echo ""
 echo "Waiting for Kibana..."
+echo "NOTE: On low-resource systems (< 2GB RAM), Kibana may take 5-10 minutes to start"
+echo ""
+
 KIBANA_URL="http://localhost:5601"
 ATTEMPT=0
-MAX_KIBANA_ATTEMPTS=90
+MAX_KIBANA_ATTEMPTS=180  # Increased from 90 to 180 (6 minutes total)
 
 while [ $ATTEMPT -lt $MAX_KIBANA_ATTEMPTS ]; do
-    if curl -s -u "elastic:${ES_PASS}" "$KIBANA_URL/api/status" | grep -q '"available"'; then
+    # Try to get status
+    STATUS=$(curl -s -u "elastic:${ES_PASS}" "$KIBANA_URL/api/status" 2>/dev/null || echo "")
+    
+    if echo "$STATUS" | grep -q '"available"'; then
         echo "✓ Kibana is ready!"
         break
     fi
+    
     ATTEMPT=$((ATTEMPT+1))
     sleep 2
-    if [ $((ATTEMPT % 10)) -eq 0 ]; then
-        echo "  Attempt $ATTEMPT/$MAX_KIBANA_ATTEMPTS..."
+    
+    # Show progress every 15 attempts (30 seconds)
+    if [ $((ATTEMPT % 15)) -eq 0 ]; then
+        ELAPSED=$((ATTEMPT * 2))
+        echo "  ⏳ Waiting ${ELAPSED}s / $((MAX_KIBANA_ATTEMPTS * 2))s..."
+        
+        # Show helpful status from logs every minute
+        if [ $((ATTEMPT % 30)) -eq 0 ]; then
+            KIBANA_STATUS=$(docker logs ddos-kibana 2>&1 | tail -5 | grep -E "(Starting|Optimizing|available)" | tail -1 || echo "Kibana is starting...")
+            echo "     Status: $KIBANA_STATUS"
+        fi
     fi
 done
 
 if [ $ATTEMPT -ge $MAX_KIBANA_ATTEMPTS ]; then
-    echo "WARNING: Kibana did not become available in time"
-    echo "Dashboards will not be imported, but the system will continue"
+    echo ""
+    echo "⚠️  WARNING: Kibana did not become available in time"
+    echo ""
+    echo "This is likely due to low system resources (you have 1GB RAM / 1 CPU)"
+    echo "Kibana may still be starting in the background."
+    echo ""
+    echo "To check status:"
+    echo "  docker logs -f ddos-kibana"
+    echo ""
+    echo "To manually import dashboards once Kibana is ready:"
+    echo "  curl -X POST \"http://localhost:5601/api/saved_objects/_import?overwrite=true\" \\"
+    echo "    -u \"elastic:${ES_PASS}\" \\"
+    echo "    -H \"kbn-xsrf: true\" \\"
+    echo "    -F \"file=@/app/config/kibana/dashboards/kibana_dashboards.ndjson\""
+    echo ""
+    echo "Continuing with system startup..."
+    echo ""
 else
     # =============================================================================
     # Validate and Import Dashboard
