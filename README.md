@@ -20,8 +20,6 @@ All components run inside Docker containers orchestrated with Docker Compose.
 
 ---
 
----
-
 ## Hardware Requirements
 
 Recommended minimum specifications for deployment:
