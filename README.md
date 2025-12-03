@@ -26,7 +26,7 @@ Recommended minimum specifications for deployment:
 | **Network** | XDP-capable NIC | Dedicated NIC | Bridged Mode required for VMs. |
 | **OS** | Linux (x86_64) | Linux (x86_64) | Ubuntu 22.04 LTS verified. |
 
-**Virtual Machine Users**: If running on VMware, VirtualBox, or KVM, you must use **Bridged Network Mode**. NAT mode hides source IPs which can lead to some issues. 
+**Virtual Machine Users**: If running on VMware, VirtualBox, or KVM, you must use **Bridged Network Mode**. NAT mode hides source IPs which can cause some issues.
 
 ---
 
@@ -62,10 +62,30 @@ docker compose version
 
 The system mounts the host's BPF tools into the container. You must install the tools specific to your running kernel to avoid "bpftool not found" errors.
 
+**Check if tools are already installed**:
+
+```bash
+which bpftool
+```
+
+**Expected output if installed**:
+```
+/usr/sbin/bpftool
+```
+
+If the command returns nothing or "not found", install the tools:
+
 ```bash
 # Ubuntu/Debian
 sudo apt-get update
 sudo apt-get install linux-tools-$(uname -r) linux-tools-common linux-tools-generic
+```
+
+After installation, verify again:
+
+```bash
+which bpftool
+bpftool version
 ```
 
 ---
@@ -203,7 +223,7 @@ sudo nc -lvnp 8080
 
 ```bash
 nc <target-ip> 8080
-Test Data
+# Type "Test Data" and press Enter
 ```
 
 **Expected Result**:
