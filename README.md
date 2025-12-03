@@ -14,6 +14,14 @@ All components run inside Docker containers orchestrated with Docker Compose.
 
 ---
 
+## Architecture
+
+![Architecture](images/Architecture.png)
+
+---
+
+---
+
 ## Hardware Requirements
 
 Recommended minimum specifications for deployment:
