@@ -26,7 +26,7 @@ Recommended minimum specifications for deployment:
 | **Network** | XDP-capable NIC | Dedicated NIC | Bridged Mode required for VMs. |
 | **OS** | Linux (x86_64) | Linux (x86_64) | Ubuntu 22.04 LTS verified. |
 
-**Virtual Machine Users**: If running on VMware, VirtualBox, or KVM, you must use **Bridged Network Mode**. NAT mode hides source IPs and prevents correct XDP attachment.
+**Virtual Machine Users**: If running on VMware, VirtualBox, or KVM, you must use **Bridged Network Mode**. NAT mode hides source IPs which can lead to some issues. 
 
 ---
 
