@@ -1,14 +1,14 @@
-# XDP-Based Real-Time DDoS Defense System (Dockerized)
+# XDP-Based Real-Time DDoS Defense System
 
 This system provides real-time detection and mitigation of DDoS attacks using flow-based machine learning and kernel-level packet enforcement.
 
 It consists of:
 
-- NFStream for real-time feature extraction
-- AdaBoost machine learning model for traffic classification
-- Redis for attack signaling
-- XDP/eBPF for kernel-level enforcement
-- Elasticsearch and Kibana for logging and visualization
+- **NFStream**: Real-time feature extraction from network traffic.
+- **AdaBoost ML Model**: Classifies traffic as BENIGN or ATTACK.
+- **Redis**: Messaging broker for attack signaling.
+- **XDP/eBPF**: Kernel-level enforcement for high-speed packet dropping.
+- **Elasticsearch & Kibana**: Centralized logging and visualization.
 
 All components run inside Docker containers orchestrated with Docker Compose.
 
@@ -16,170 +16,106 @@ All components run inside Docker containers orchestrated with Docker Compose.
 
 ## Hardware Requirements
 
-Recommended minimum specifications:
+Recommended minimum specifications for deployment:
 
-- 64-bit Linux host  
-- 4 CPU cores (2 minimum)  
-- 8 GB RAM (4 minimum)  
-- 20 GB free disk space  
-- XDP-capable network interface  
-- Root or sudo privileges (required for XDP attachment)
+| Resource | Minimum | Recommended | Notes |
+|----------|---------|-------------|-------|
+| **CPU** | 2 Cores | 4+ Cores | ML inference requires dedicated CPU cycles. |
+| **RAM** | 4 GB | 8 GB+ | Elasticsearch is memory intensive. |
+| **Storage** | 20 GB | 40 GB | For Docker images and log data. |
+| **Network** | XDP-capable NIC | Dedicated NIC | Bridged Mode required for VMs. |
+| **OS** | Linux (x86_64) | Linux (x86_64) | Ubuntu 22.04 LTS verified. |
+
+**Virtual Machine Users**: If running on VMware, VirtualBox, or KVM, you must use **Bridged Network Mode**. NAT mode hides source IPs and prevents correct XDP attachment.
 
 ---
 
 ## Software Requirements
 
-This system was tested and verified on:
+Ensure the following are installed on your host machine before starting:
 
-- **Ubuntu 22.04.05 LTS**
-- **Kernel version: 5.15.0-161-generic**
+### 1. Operating System & Kernel
 
-If system requirements are met (Docker support, kernel compatibility, privileges, and NIC capability), the system should run successfully on any modern Linux distribution.
+- **Verified on**: Ubuntu 22.04.05 LTS (Kernel 5.15.0-161-generic)
+- **Minimum Kernel**: 5.4+ (Required for BPF CO-RE support)
+- **Privileges**: Root or sudo access is required to load XDP programs
 
-### Check Kernel Version
+To check your kernel version:
 
 ```bash
 uname -r
 ```
 
----
+### 2. Docker Environment
 
-## Docker Environment
+- **Docker Engine**: v20.10+
+- **Docker Compose**: v2.0+
 
-This system was verified using:
-
-* Docker Engine: **29.1.1**
-* Docker Compose: **v2.40.3**
-
-Verify locally:
+To verify your local Docker installation:
 
 ```bash
-docker compose version
 docker --version
+docker compose version
+```
+
+### 3. Kernel Tools (CRITICAL)
+
+The system mounts the host's BPF tools into the container. You must install the tools specific to your running kernel to avoid "bpftool not found" errors.
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install linux-tools-$(uname -r) linux-tools-common linux-tools-generic
 ```
 
 ---
 
-## Virtual Machine Note
+## Quick Start Guide
 
-If running inside a virtual machine (VMware / VirtualBox / KVM):
+### 1. Download the Project
 
-Use **Bridged Mode** in the network interface configurations
-
-Using NAT mode is not optimal as it:
-
-* Hides real source IPs
-* Breaks proper packet capture
-* Prevents XDP attachment
-* Causes incorrect enforcement behavior
-
----
-
-## Installation and Startup
-
-1. Clone or download the repository:
+**Option A: Git Clone (Recommended)**
 
 ```bash
 git clone https://github.com/rexsez/ddos-defense.git
-```
-
-Or download manually from: https://github.com/rexsez/ddos-defense.git
-
-2. Navigate into the project:
-
-```bash
 cd ddos-defense
 ```
 
-3. Make scripts executable:
+**Option B: ZIP Download**
+
+Download and extract the ZIP file from https://github.com/rexsez/ddos-defense, then navigate to the directory:
 
 ```bash
-chmod +x start.sh manage_blacklist.sh
+unzip ddos-defense-main.zip
+cd ddos-defense-main
 ```
 
-4. Start the system:
+### 2. Start the System
+
+Make the scripts executable and run the startup script. This script handles dependency detection, permission fixing, and container orchestration automatically.
 
 ```bash
+chmod +x *.sh
 sudo ./start.sh
 ```
 
----
+### 3. Monitor Startup
 
-## NIC Auto-Detection
-
-`start.sh` automatically detects the active network interface and assigns it for:
-
-* XDP attachment
-* NFStream capture
-
-Example console output:
-
-```
-Detecting network interface...
-Using interface: ens33
-```
-
-In most cases, no configuration is needed.
-
-If traffic is missing or enforcement is not working, update the interface inside `.env`.
-
----
-
-## Expected Startup Output
-
-After running `./start.sh`, you should see:
-
-```
-Detecting network interface...
-Using interface: ens33
-
-Container ddos-elasticsearch  Healthy
-Container ddos-redis          Healthy
-Container ddos-kibana         Started
-Container ddos-app            Started
-```
-
-Service Info:
-
-```
-Network Interface: ens33
-
-Access:
-Kibana:        http://localhost:5601
-Elasticsearch: http://localhost:9200
-Redis:         localhost:6379
-
-Credentials:
-Username: elastic
-Password: jgYsL5-kztDUSd8HyiNd
-```
-
-Only ensure:
-
-✅ NIC printed  
-✅ Elasticsearch healthy  
-✅ ddos-app running  
-✅ URLs shown
-
----
-
-## Service Verification
-
-Check logs:
+You can follow the logs to ensure all services start correctly:
 
 ```bash
 docker logs -f ddos-app
 ```
 
-Expected output:
+(Press `Ctrl+C` to stop following logs)
+
+**Expected Output**:
 
 ```
-kibana_system password configured
+Detecting network interface...
+Using interface: ens33
 
-Created enforcement-blocks template
-Created xdp-drops template
-Created netflows template
-
+...
 SUCCESS: Kibana is ready
 Dashboards imported successfully
 Demo data inserted successfully
@@ -188,173 +124,145 @@ xdp-controller entered RUNNING state
 ml-pipeline entered RUNNING state
 ```
 
----
+## Service Verification
 
-## Service Roles
+Once the system is running, verify the status of the components.
 
-### XDP Controller
+### Service Roles
 
-Handles kernel-level enforcement and IP blocking.
+- **XDP Controller**: Handles kernel-level enforcement and IP blocking.
+- **ML Pipeline**: Runs NFStream capture + AdaBoost classification.
 
-### ML Pipeline
+Both services must be in the **RUNNING** state for the defense to work.
 
-Runs NFStream + AdaBoost classification.
+### Service Info & Credentials
 
-Both must be running for detection and mitigation to work.
-
----
-
-## Accessing Kibana
-
-Open:
-
-[http://localhost:5601](http://localhost:5601)
-
-Login credentials:
-
-```
-Username: elastic
-Password: jgYsL5-kztDUSd8HyiNd
-```
-
-Once logged in:
-
-* Dashboards auto-load
-* Traffic updates live (with auto refresh set on the dashboard)
-* Drops & blocks appear immediately
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| **Kibana** | http://localhost:5601 | User: `elastic` / Pass: `jgYsL5-kztDUSd8HyiNd` |
+| **Elasticsearch** | http://localhost:9200 | User: `elastic` / Pass: `jgYsL5-kztDUSd8HyiNd` |
+| **Redis** | localhost:6379 | N/A |
 
 ---
 
 ## Accessing the Dashboard
 
-After logging into Kibana:
-
-1. Click on the hamburger menu (≡) in the top-left corner
-2. Navigate to **Analytics** → **Dashboards**
-3. Select **XDP and Network Traffic Summary** from the dashboard list
-4. The dashboard will display real-time DDoS detection metrics, blocked IPs, and traffic analysis
+1. Open http://localhost:5601 in your browser.
+2. Log in with the credentials provided above.
+3. Open the hamburger menu (≡) in the top-left corner.
+4. Navigate to **Analytics** → **Dashboards**.
+5. Select **"XDP and Network Traffic Summary"**.
 
 ![Kibana Dashboards Navigation](images/kibana-dashboards-navigation.png)
 
-Alternatively, you can find the dashboard in the **Recently viewed** section if you've accessed it before.
-
 ![XDP and Network Traffic Summary Dashboard List](images/xdp-dashboard-list.png)
-
-The dashboard will load and display comprehensive real-time metrics:
 
 ![XDP Dashboard Full View](images/xdp-dashboard-full-view.png)
 
-
 ![XDP Dashboard Detailed Metrics](images/xdp-dashboard-detailed-metrics.png)
 
-The dashboard provides:
+The dashboard displays real-time metrics including:
 
-* Real-time traffic flow statistics
-* XDP drop counters and enforcement blocks
-* Machine learning classification results
-* Attack detection alerts and patterns
-
----
-
-## Manual Validation via manage_blacklist.sh
-
-This script validates enforcement in seconds.
-
-### Block an IP
-
-```bash
-./manage_blacklist.sh block 192.168.1.100
-```
-
-### Unblock an IP
-
-```bash
-./manage_blacklist.sh unblock 192.168.1.100
-```
-
-### List All Blocked
-
-```bash
-./manage_blacklist.sh list
-```
+- Traffic flow statistics
+- Dropped packet counters
+- ML classification results
+- Active blocks
 
 ---
 
-## Expected Results
+## Validation & Testing
 
-### On block:
+### 1. Manual IP Blocking
 
-✅ IP inserted into kernel blacklist  
-✅ Packets immediately dropped  
-✅ Block appears in Kibana  
-✅ Drop counters increase
-
-### On unblock:
-
-✅ Kernel removes IP  
-✅ Traffic resumes
-
----
-
-## Content-Based Filtering
-
-The kernel also performs **payload filtering**.
-
-If incoming packets contain:
-
-```
-Test Data
-```
-
-They are dropped instantly at XDP level.
-
----
-
-## Content Filter Test
-
-### On protected system:
+You can validate the blocking capability using the management script.
 
 ```bash
-nc -lvnp 8080
+# Block an IP
+sudo ./manage_blacklist.sh block-ip 192.168.1.100
+
+# List all blocked IPs
+sudo ./manage_blacklist.sh list
+
+# Unblock an IP
+sudo ./manage_blacklist.sh remove-ip 192.168.1.100
 ```
 
-### From attacker machine:
+**Expected Result**: Packets from the blocked IP should be dropped immediately, and the "XDP Blocks" counter in Kibana should increase.
+
+### 2. Content-Based Filtering
+
+The kernel is hardcoded to drop packets containing the string **"Test Data"**.
+
+**On the protected system (Host)**:
+
+```bash
+sudo nc -lvnp 8080
+```
+
+**From an attacker machine**:
 
 ```bash
 nc <target-ip> 8080
-```
-
-Then send:
-
-```
 Test Data
 ```
 
----
+**Expected Result**:
 
-## Expected Behavior
-
-✅ Packet is dropped at kernel level  
-✅ No response received  
-✅ Kibana shows drop event  
-✅ Reason indicates content-based filtering
+- The connection should hang or timeout (packet dropped).
+- Logs should show: `[xdp-ctrl][WARN] DROP DETECTED: <IP> (CONTENT_FILTER)`
 
 ---
 
-## Troubleshooting (In Order)
+## Troubleshooting
 
-Only check:
+### Dashboard Import Failed
 
-1. `.env` NIC value
-2. Docker status
-3. Containers:
+If dashboards are missing in Kibana, you can import them manually:
+
+1. Go to **Stack Management** → **Saved Objects**.
+2. Click **Import**.
+3. Select the file: `config/kibana/dashboards/kibana_dashboards.ndjson`.
+
+![Step 1: Navigate to Stack Management](images/troubleshooting-step1.png)
+
+![Step 2: Access Saved Objects](images/troubleshooting-step2.png)
+
+![Step 3: Import Dashboard File](images/troubleshooting-step3.png)
+
+### Containers Fail to Start
+
+- **Elasticsearch Exits**: Check memory usage. Ensure `vm.max_map_count` is set correctly (the start script attempts to do this).
+- **Permission Errors**: Run `sudo ./start.sh clean` to reset permissions on the data directories.
+
+### XDP Error: "bpftool not found"
+
+This indicates the container cannot find the kernel tools on the host.
+
+- **Verify installation**: `apt install linux-tools-$(uname -r)`
+- **Re-run detection**: `sudo ./detect_xdp_deps.sh`
+
+### XDP Error: "Device Busy" or "Failed to Pin"
+
+If the system wasn't stopped cleanly, XDP maps may remain locked.
+
+**Fix**: Run a clean restart to force-detach and remove stale maps.
 
 ```bash
-docker ps
+sudo ./start.sh clean
 ```
 
-4. Logs:
+---
+
+## Stopping the System
+
+To stop containers and keep data:
 
 ```bash
-docker logs ddos-app
+sudo ./start.sh down
+```
+
+To stop and delete all data (clean reset):
+
+```bash
+sudo ./start.sh clean
 ```
